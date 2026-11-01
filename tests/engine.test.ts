@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {players,defaultNeeds} from '../lib/data.ts';
+import {scorePlayers} from '../lib/scoring.ts';
+import {selectWindow} from '../lib/optimizer.ts';
+test('position-relative percentiles ignore other roles',()=>{const a=scorePlayers(players);const b=scorePlayers(players.filter(p=>p.position==='ST'));for(const p of b)assert.equal(p.score,a.find(q=>q.id===p.id)!.score);});
+test('small samples shrink toward neutral',()=>{const p=scorePlayers(players).find(p=>p.minutes===630)!;assert.ok(p.reliability<.5);const adjusted=50+(p.raw-50)*p.reliability;assert.ok(Math.abs(adjusted-50)<=Math.abs(p.raw-50));});
+test('budget, unique IDs and role limits are hard constraints',()=>{for(const budget of [0,15,50,100,500]){const r=selectWindow(scorePlayers([...players,players[0]]),budget,defaultNeeds);assert.ok(r.cost<=budget);assert.equal(new Set(r.players.map(p=>p.id)).size,r.players.length);for(const [pos,n] of Object.entries(defaultNeeds))assert.ok(r.players.filter(p=>p.position===pos).length<=n);}});
+test('exact optimizer beats greedy trap',()=>{const seed=scorePlayers(players)[0];const pool=[{...seed,id:'a',position:'ST' as const,score:50,estimatedFee:3},{...seed,id:'b',position:'ST' as const,score:90,estimatedFee:6},{...seed,id:'c',position:'CM' as const,score:90,estimatedFee:6}];const needs={ST:1,CM:1,CB:0,RW:0};const optimal=selectWindow(pool,12,needs);assert.deepEqual(optimal.players.map(p=>p.id),['b','c']);assert.ok(optimal.objective>selectWindow(pool,12,needs,true).objective);});
+test('deterministic and no worse than baseline across budgets',()=>{const pool=scorePlayers(players);for(let b=0;b<=140;b+=7){const r=selectWindow(pool,b,defaultNeeds);assert.deepEqual(r,selectWindow(pool,b,defaultNeeds));assert.ok(r.objective>=selectWindow(pool,b,defaultNeeds,true).objective);}});
+test('ineligible minutes and empty needs produce no signings',()=>{assert.equal(selectWindow(scorePlayers(players.map(p=>({...p,minutes:100}))),500,defaultNeeds).players.length,0);assert.equal(selectWindow(scorePlayers(players),500,{ST:0,CM:0,CB:0,RW:0}).cost,0);});
